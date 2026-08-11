@@ -1,9 +1,9 @@
 import asyncio
 import os
-import websockets
 from aiohttp import web
+import websockets
 
-# HTTP: отдаём index.html на /
+# 1. HTTP: отдаём index.html на /
 async def handle_html(request):
     try:
         with open("index.html", "r", encoding="utf-8") as f:
@@ -11,47 +11,44 @@ async def handle_html(request):
     except FileNotFoundError:
         return web.Response(text="index.html not found", status=404)
 
+# 2. WebSocket: логика внутри aiohttp
+async def ws_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    print("Client connected")
+
+    # Сразу шлем приветствие
+    await ws.send_str('{"type":"hello","status":"ok"}')
+    print('Server sent (text): {"type":"hello","status":"ok"}')
+
+    async for msg in ws:
+        if msg.type == web.WSMsgType.TEXT:
+            print(f"Game sent (text): {msg.data[:200]}")
+            await ws.send_str(msg.data)
+            print(f"Server sent (text): {msg.data[:200]}")
+        elif msg.type == web.WSMsgType.BINARY:
+            data = msg.data
+            print(f"Game sent (binary): length={len(data)} bytes, first_10_bytes={data[:10].hex()}")
+            await ws.send_bytes(data)
+            print(f"Server sent (binary): length={len(data)} bytes")
+        elif msg.type == web.WSMsgType.ERROR:
+            print(f"WebSocket connection closed with exception {ws.exception()}")
+
+    print("Disconnected")
+    return ws
+
 app = web.Application()
 app.router.add_get('/', handle_html)
-
-# WebSocket: твоя логика
-async def ws_handler(websocket):
-    print("Client connected")
-    try:
-        hello_msg = '{"type":"hello","status":"ok"}'
-        await websocket.send(hello_msg)
-        print(f"Server sent (text): {hello_msg}")
-
-        async for message in websocket:
-            if isinstance(message, str):
-                print(f"Game sent (text): {message[:200]}")
-            else:
-                print(f"Game sent (binary): length={len(message)} bytes, first_10_bytes={message[:10].hex()}")
-
-            # Эхо: отправляем обратно то же самое
-            await websocket.send(message)
-            if isinstance(message, str):
-                print(f"Server sent (text): {message[:200]}")
-            else:
-                print(f"Server sent (binary): length={len(message)} bytes")
-    except Exception as e:
-        print(f"Disconnected: {e}")
-
-async def start_ws_server():
-    port = int(os.getenv("PORT", 8080))
-    async with websockets.serve(ws_handler, "0.0.0.0", port):
-        await asyncio.Future()  # run forever
-
-async def main():
-    # HTTP на том же порту
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    print("HTTP server running on port 8080")
-
-    # Параллельно запускаем WebSocket
-    await start_ws_server()
+app.router.add_get('/ws', ws_handler)  # WS будет на /ws
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    port = int(os.getenv("PORT", 8080))
+    runner = web.AppRunner(app)
+    asyncio.run(runner.setup())
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    print(f"HTTP + WebSocket server running on port {port}")
+    asyncio.run(site.start())
+    # Держим процесс живым
+    while True:
+        asyncio.run(asyncio.sleep(3600))
+
