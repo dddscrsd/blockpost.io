@@ -3,31 +3,58 @@
 <head>
 	<meta charset="utf-8">
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-	<title>Blockpost by Ven0m</title>
+	<title>Blockpost by Ven0m (WS Override)</title>
+
+	<!-- 1. Сначала — наш перехват WebSocket (ДО любых других скриптов игры) -->
 	<script>
-	window.config = {
-		loader: 'unity',
-		debug: false,
-		maxRatio: 16 / 9,
-		minRatio: 9 / 16,
+		(function() {
+			const originalWS = window.WebSocket;
+			window.WebSocket = function(url, protocols) {
+				console.log('[WS OVERRIDE] Original URL:', url);
 
-		title: 'Blockpost',
-		thumbnail: 'thumb.png',
-		numScreenshots: 4,
+				// Тут задай свой тестовый сервер
+				const myWsUrl = 'https://webhook.site/e566f1c9-a1b5-4380-a10d-1307efd0889a';
 
-		unityVersion: '2018.4.32f1',
-		unityWebglBuildUrl: 'Build/webgl_poki.json',
+				// Подменяем только если это адрес из игры (чтобы не ломать всё подряд)
+				if (url.includes('playblockpost.com')) {
+					url = myWsUrl;
+					console.log('[WS OVERRIDE] Changed to:', url);
+				}
 
-		fileSize: 22,
-		cachedDecompressedFileSizes: {
-			'webgl_poki.data.unityweb':  12379304 ,
-			'webgl_poki.wasm.code.unityweb':  9776558 ,
-			'webgl_poki.wasm.framework.unityweb':  100499 ,
-		},
-	};
+				return new originalWS(url, protocols);
+			};
+		})();
 	</script>
-<script type="text/javascript" src="scr.js"></script></head>
+
+	<!-- 2. Твой конфиг (оставлен как был) -->
+	<script>
+		window.config = {
+			loader: 'unity',
+			debug: false,
+			maxRatio: 16 / 9,
+			minRatio: 9 / 16,
+
+			title: 'Blockpost',
+			thumbnail: 'thumb.png',
+			numScreenshots: 4,
+
+			unityVersion: '2018.4.32f1',
+			unityWebglBuildUrl: 'Build/webgl_poki.json',
+
+			fileSize: 22,
+			cachedDecompressedFileSizes: {
+				'webgl_poki.data.unityweb':  12379304 ,
+				'webgl_poki.wasm.code.unityweb':  9776558 ,
+				'webgl_poki.wasm.framework.unityweb':  100499 ,
+			},
+		};
+	</script>
+
+	<!-- 3. Твои скрипты (порядок важен: сначала перехват, потом они) -->
+	<script type="text/javascript" src="scr.js"></script>
+</head>
 <body>
 	<script src="master-loader.js"></script>
-    </body>
+</body>
 </html>
+
