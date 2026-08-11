@@ -5,7 +5,7 @@
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 	<title>Blockpost by Ven0m (WS Override)</title>
 
-	<!-- 1. Сначала — наш перехват WebSocket (ДО любых других скриптов игры) -->
+	<!-- 1. ПЕРЕХВАТ WEBSOCKET (Обязательно первым!) -->
 	<script>
   (function() {
     const originalWS = window.WebSocket;
@@ -15,8 +15,7 @@
       // Твой реальный WSS-сервер на Railway
       const myWsUrl = 'wss://blockpostio-production.up.railway.app/ws';
 
-      // Подменяем только если адрес из игры (чтобы не ломать остальное)
-      if (url.includes('playblockpost.com')) {
+      if (url.includes('playblockpost.com') || url.includes('85.119.149.187')) {
         url = myWsUrl;
         console.log('[WS OVERRIDE] Changed to:', url);
       }
@@ -26,11 +25,11 @@
   })();
 </script>
 
-	<!-- 2. Твой конфиг (оставлен как был) -->
+	<!-- 2. КОНФИГ С УВЕЛИЧЕННОЙ ПАМЯТЬЮ -->
 	<script>
 		window.config = {
 			loader: 'unity',
-			debug: false,
+			debug: true, // Включаем отладку, чтобы видеть ошибки в консоли
 			maxRatio: 16 / 9,
 			minRatio: 9 / 16,
 
@@ -47,13 +46,16 @@
 				'webgl_poki.wasm.code.unityweb':  9776558 ,
 				'webgl_poki.wasm.framework.unityweb':  100499 ,
 			},
+            
+            // --- ЭТО ДОБАВЛЕНО ДЛЯ БОРЬБЫ С OUT OF MEMORY ---
+            // Пытаемся запросить 512MB памяти. Работает не во всех шаблонах, но попробовать стоит.
+            unity_MemorySize: 512, 
+            TOTAL_MEMORY: 536870912 
 		};
 	</script>
-
-	<!-- 3. Твои скрипты (порядок важен: сначала перехват, потом они) -->
-	<script type="text/javascript" src=""></script>
 </head>
 <body>
+	<!-- Убрал пустой скрипт src="" -->
 	<script src="master-loader.js"></script>
 </body>
 </html>
