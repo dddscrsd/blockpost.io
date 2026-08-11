@@ -1,7 +1,5 @@
-import asyncio
 import os
 from aiohttp import web
-import websockets
 
 # 1. HTTP: отдаём index.html на /
 async def handle_html(request):
@@ -43,12 +41,6 @@ app.router.add_get('/ws', ws_handler)  # WS будет на /ws
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    runner = web.AppRunner(app)
-    asyncio.run(runner.setup())
-    site = web.TCPSite(runner, "0.0.0.0", port)
     print(f"HTTP + WebSocket server running on port {port}")
-    asyncio.run(site.start())
-    # Держим процесс живым
-    while True:
-        asyncio.run(asyncio.sleep(3600))
+    web.run_app(app, host="0.0.0.0", port=port)
 
