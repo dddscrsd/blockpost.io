@@ -7,24 +7,24 @@
 
 	<!-- 1. Сначала — наш перехват WebSocket (ДО любых других скриптов игры) -->
 	<script>
-		(function() {
-			const originalWS = window.WebSocket;
-			window.WebSocket = function(url, protocols) {
-				console.log('[WS OVERRIDE] Original URL:', url);
+  (function() {
+    const originalWS = window.WebSocket;
+    window.WebSocket = function(url, protocols) {
+      console.log('[WS OVERRIDE] Original URL:', url);
 
-				// Тут задай свой тестовый сервер
-				const myWsUrl = 'https://webhook.site/e566f1c9-a1b5-4380-a10d-1307efd0889a';
+      // Твой реальный WSS-сервер на Railway
+      const myWsUrl = 'wss://serverbps-production.up.railway.app';
 
-				// Подменяем только если это адрес из игры (чтобы не ломать всё подряд)
-				if (url.includes('playblockpost.com')) {
-					url = myWsUrl;
-					console.log('[WS OVERRIDE] Changed to:', url);
-				}
+      // Подменяем только если адрес из игры (чтобы не ломать остальное)
+      if (url.includes('playblockpost.com')) {
+        url = myWsUrl;
+        console.log('[WS OVERRIDE] Changed to:', url);
+      }
 
-				return new originalWS(url, protocols);
-			};
-		})();
-	</script>
+      return new originalWS(url, protocols);
+    };
+  })();
+</script>
 
 	<!-- 2. Твой конфиг (оставлен как был) -->
 	<script>
