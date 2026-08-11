@@ -1,10 +1,51 @@
 import asyncio
 import os
 from aiohttp import web
+import struct
 
-# Наш известный ID игрока (12288 в десятичной = 0x3000 в hex)
+# --- КОНФИГУРАЦИЯ ---
 PLAYER_ID = 12288 
-PLAYER_ID_BYTES = PLAYER_ID.to_bytes(4, byteorder='little') # Превращаем в 4 байта: 00 30 00 00
+# ID команды авторизации (из FriendClient.send_auth -> packetid: 0)
+CMD_AUTH = 0
+# ID команды запроса списка друзей (packetid: 1)
+CMD_FRIENDS_LIST = 1
+
+def write_string(s: str) -> bytes:
+    """Эмуляция NET.WRITE_STRING: [4 байта длина][байты строки UTF-8]"""
+    encoded = s.encode('utf-8')
+    length = len(encoded)
+    # Little Endian длина + данные
+    return struct.pack('<I', length) + encoded
+
+def generate_fake_friends_list() -> bytes:
+    """Генерирует бинарный пакет со списком друзей, который поймет клиент"""
+    friends = [
+        {"gid": 555111, "name": "SuperGamer", "status": 1}, # 1 = Online
+        {"gid": 999888, "name": "NoobMaster", "status": 0}, # 0 = Offline
+        {"gid": PLAYER_ID, "name": "MeMyself", "status": 1}
+    ]
+    
+    data = bytearray()
+    
+    # 1. Пишем количество друзей (int, 4 байта, LE)
+    data.extend(struct.pack('<I', len(friends)))
+    
+    for f in friends:
+        # Структура для recv_friend: status(byte), gid(long), name(string), fstatus(byte)
+        
+        # Status (1 байт)
+        data.append(f['status'])
+        
+        # GID (Long, 8 байт, LE) - в C# long это 8 байт
+        data.extend(struct.pack('<Q', f['gid']))
+        
+        # Name (String: Len + Bytes)
+        data.extend(write_string(f['name']))
+        
+        # FStatus (1 байт) - часто дублирует статус или имеет спец значение
+        data.append(f['status']) 
+
+    return bytes(data)
 
 async def ws_handler(request):
     ws = web.WebSocketResponse()
@@ -12,52 +53,64 @@ async def ws_handler(request):
     print("Client connected")
 
     try:
-        print("Waiting for client handshake...")
-        
-        # Флаг, чтобы ответить только один раз на первый пакет
-        first_response_sent = False
-
         async for msg in ws:
             if msg.type == web.WSMsgType.BINARY:
                 data = msg.data
-                hex_data = data.hex()
-                print(f"Received: {hex_data}")
-
-                if not first_response_sent and len(data) >= 4:
-                    # --- ГЛАВНАЯ ЛОГИКА ---
-                    
-                    # Проверяем, является ли это первым пакетом проверки (ID 64 08)
-                    # data[1] и data[2] - это байты ID команды
-                    cmd_id_hex = f"{data[1]:02x}{data[2]:02x}"
-                    
-                    if cmd_id_hex == "6408":
-                        print("Detected Handshake packet (6408). Sending Auth Success response.")
-                        
-                        # ФОРМИРУЕМ ОТВЕТ ДЛЯ АВТОРИЗАЦИИ
-                        # Структура (предполагаемая): [F5] [ID ответа] [Status 0] [PlayerID]
-                        # Попробуем ID ответа = 01 00 (часто значит "Success")
-                        response_packet = bytes([0xF5, 0x01, 0x00, 0x00]) + PLAYER_ID_BYTES
-
-                        
-                        # Если игра ждет 9 байт, это оно. Если меньше - обрежется, но структура важнее.
-                        print(f"Sending Auth Response: {response_packet.hex()}")
-                        await ws.send_bytes(response_packet)
-                        first_response_sent = True
-                    else:
-                        # Для других пакетов шлем простой ОК с тем же ID, но статусом 0
-                        # Это запасной вариант, если игра ждет подтверждения на каждый шаг
-                        response_packet = data[:3] + bytes([0x00]) 
-                        print(f"Sending generic OK: {response_packet.hex()}")
-                        await ws.send_bytes(response_packet)
                 
-                # Если первый ответ уже отправлен, просто эхом возвращаем пакеты, 
-                # чтобы игра думала, что сервер живой, но не ломала протокол
-                elif len(data) >= 3:
-                     # Возвращаем минимальный пакет с тем же ID
-                     response_packet = data[:3] + bytes([0x00])
-                     await ws.send_bytes(response_packet)
+                # --- ЛОГИКА ПАРСИНГА ПАКЕТА КЛИЕНТА ---
+                # Предполагаем формат клиента: [Length:4][CmdID:2][Body...]
+                if len(data) < 6:
+                    print("Packet too short")
+                    continue
 
-            elif msg.type in (web.WSMsgType.ERROR, web.WSMgType.CLOSED):
+                # Читаем длину (первые 4 байта)
+                packet_len = struct.unpack('<I', data[0:4])[0]
+                # Читаем Command ID (следующие 2 байта)
+                cmd_id = struct.unpack('<H', data[4:6])[0]
+                
+                print(f"Received CMD: {cmd_id} (Hex: {hex(cmd_id)})")
+
+                response_data = b""
+
+                if cmd_id == CMD_AUTH:
+                    # Клиент отправил send_auth()
+                    # Ожидаем: Long(gid), String(name), String(sign)
+                    # Мы просто подтверждаем успех. 
+                    # ВАЖНО: Какой ответ ждет клиент после Auth?
+                    # Обычно это пустой пакет или пакет с подтверждением.
+                    # Но судя по FakeServer, после Auth клиент сразу ждет списки.
+                    
+                    print("Auth received. Sending empty OK response.")
+                    # Возвращаем пакет с длиной 0 или просто подтверждение
+                    response_data = struct.pack('<I', 0) # Длина 0
+                    
+                elif cmd_id == CMD_FRIENDS_LIST:
+                    # Клиент запросил список друзей (send_friendlist)
+                    print("Friends List requested. Generating fake data...")
+                    
+                    # Формируем полный бинарный пакет
+                    body = generate_fake_friends_list()
+                    total_len = len(body)
+                    
+                    # Собираем ответ: [Длина тела][CmdID ответа?][Тело]
+                    # Часто сервер шлет тот же CmdID или специальный ID ответа.
+                    # Попробуем отправить тело сразу, либо с заголовком.
+                    # Если клиент читает через NET.BEGIN_READ(..., startpos: 4), 
+                    # значит первые 4 байта - это длина, которую он может игнорировать или использовать.
+                    
+                    header = struct.pack('<I', total_len)
+                    response_data = header + body
+                    
+                else:
+                    print(f"Unknown command {cmd_id}. Sending generic error.")
+                    response_data = struct.pack('<I', 1) + bytes([0xFF]) # Error byte
+
+                # Отправляем ответ
+                if response_data:
+                    print(f"Sending response: {len(response_data)} bytes")
+                    await ws.send_bytes(response_data)
+
+            elif msg.type in (web.WSMsgType.ERROR, web.WSMsgType.CLOSED):
                 break
 
     except Exception as e:
@@ -82,3 +135,4 @@ if __name__ == "__main__":
         await asyncio.Event().wait()
 
     asyncio.run(main())
+
