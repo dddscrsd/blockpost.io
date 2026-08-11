@@ -2,6 +2,10 @@ import asyncio
 import os
 from aiohttp import web
 
+# Наш известный ID игрока (12288 в десятичной = 0x3000 в hex)
+PLAYER_ID = 12288 
+PLAYER_ID_BYTES = PLAYER_ID.to_bytes(4, byteorder='little') # Превращаем в 4 байта: 00 30 00 00
+
 async def ws_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
@@ -9,6 +13,9 @@ async def ws_handler(request):
 
     try:
         print("Waiting for client handshake...")
+        
+        # Флаг, чтобы ответить только один раз на первый пакет
+        first_response_sent = False
 
         async for msg in ws:
             if msg.type == web.WSMsgType.BINARY:
@@ -16,23 +23,40 @@ async def ws_handler(request):
                 hex_data = data.hex()
                 print(f"Received: {hex_data}")
 
-                # --- ГЛАВНАЯ ЛОГИКА ---
-                # Мы НЕ отправляем data обратно (это вызывало ошибку 48).
-                # Мы формируем свой пакет ответа.
+                if not first_response_sent and len(data) >= 4:
+                    # --- ГЛАВНАЯ ЛОГИКА ---
+                    
+                    # Проверяем, является ли это первым пакетом проверки (ID 64 08)
+                    # data[1] и data[2] - это байты ID команды
+                    cmd_id_hex = f"{data[1]:02x}{data[2]:02x}"
+                    
+                    if cmd_id_hex == "6408":
+                        print("Detected Handshake packet (6408). Sending Auth Success response.")
+                        
+                        # ФОРМИРУЕМ ОТВЕТ ДЛЯ АВТОРИЗАЦИИ
+                        # Структура (предполагаемая): [F5] [ID ответа] [Status 0] [PlayerID]
+                        # Попробуем ID ответа = 01 00 (часто значит "Success")
+                        response_packet = bytes([0xF5, 0x01, 0x00, 0x00]) + PLAYER_ID_BYTES
+                        
+                        # Если игра ждет 9 байт, это оно. Если меньше - обрежется, но структура важнее.
+                        print(f"Sending Auth Response: {response_packet.hex()}")
+                        await ws.send_bytes(response_packet)
+                        first_response_sent = True
+                    else:
+                        # Для других пакетов шлем простой ОК с тем же ID, но статусом 0
+                        # Это запасной вариант, если игра ждет подтверждения на каждый шаг
+                        response_packet = data[:3] + bytes([0x00]) 
+                        print(f"Sending generic OK: {response_packet.hex()}")
+                        await ws.send_bytes(response_packet)
                 
-                # Вариант 1: Самый частый случай для старых игр.
-                # Ответ: [Магия F5] [ID 0000] [Длина 0] [Статус 0]
-                # Это значит: "Пакет принят, ошибок нет".
-                response_packet = bytes([0xF5, 0x00, 0x00, 0x00, 0x00])
-                
-                # Если игра ждет ровно 4 байта, убери последний 0x00.
-                # Но обычно 5 байт безопаснее.
-                
-                print(f"Sending OK packet: {response_packet.hex()}")
-                await ws.send_bytes(response_packet)
-                # -----------------------
+                # Если первый ответ уже отправлен, просто эхом возвращаем пакеты, 
+                # чтобы игра думала, что сервер живой, но не ломала протокол
+                elif len(data) >= 3:
+                     # Возвращаем минимальный пакет с тем же ID
+                     response_packet = data[:3] + bytes([0x00])
+                     await ws.send_bytes(response_packet)
 
-            elif msg.type in (web.WSMsgType.ERROR, web.WSMsgType.CLOSED):
+            elif msg.type in (web.WSMsgType.ERROR, web.WSMgType.CLOSED):
                 break
 
     except Exception as e:
