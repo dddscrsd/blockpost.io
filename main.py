@@ -37,6 +37,7 @@ async def ws_handler(request):
                         # Структура (предполагаемая): [F5] [ID ответа] [Status 0] [PlayerID]
                         # Попробуем ID ответа = 01 00 (часто значит "Success")
                         response_packet = bytes([0xF5, 0x01, 0x00, 0x00]) + PLAYER_ID_BYTES
+
                         
                         # Если игра ждет 9 байт, это оно. Если меньше - обрежется, но структура важнее.
                         print(f"Sending Auth Response: {response_packet.hex()}")
